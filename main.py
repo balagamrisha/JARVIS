@@ -44,25 +44,16 @@ RECORDING_PATH = "audio/recording.wav"
 
 
 def request_gpt(prompt: str) -> str:
-    """
-    Send a prompt to the Groq API and return the response.
-    """
+    """Send a prompt to the Groq API and return the response."""
     response = gpt_client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": f"{prompt}",
-            }
-        ],
+        messages=[{"role": "user", "content": f"{prompt}"}],
         model="llama-3.3-70b-versatile",
     )
     return response.choices[0].message.content
 
 
 async def transcribe(file_name: Union[Union[str, bytes, PathLike[str], PathLike[bytes]], int]):
-    """
-    Transcribe audio using Deepgram API.
-    """
+    """Transcribe audio using Deepgram API."""
     with open(file_name, "rb") as audio:
         source = {"buffer": audio, "mimetype": "audio/wav"}
         response = await deepgram.transcription.prerecorded(source)
@@ -70,19 +61,14 @@ async def transcribe(file_name: Union[Union[str, bytes, PathLike[str], PathLike[
 
 
 def log(log_text: str):
-    """
-    Print and write to status.txt
-    """
+    """Print and write to status.txt"""
     print(log_text)
     with open("status.txt", "w") as f:
         f.write(log_text)
 
 
 def handle_local_commands(text: str) -> tuple[bool, str]:
-    """
-    Check if the user input is a local command and handle it.
-    Returns (handled: bool, response: str)
-    """
+    """Check if the user input is a local command and handle it."""
     text_lower = text.lower()
 
     # Time command
@@ -96,11 +82,11 @@ def handle_local_commands(text: str) -> tuple[bool, str]:
         return True, f"Today is {current_date}"
 
     # Open Chrome
-    if "open chrome" in text_lower:
+    if "open chrome" in text_lower or "open google chrome" in text_lower:
         try:
             if platform.system() == "Windows":
                 try:
-                    os.startfile("chrome")
+                    subprocess.Popen(["chrome"])
                 except:
                     try:
                         subprocess.Popen(["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"])
@@ -110,7 +96,7 @@ def handle_local_commands(text: str) -> tuple[bool, str]:
                 subprocess.Popen(["open", "-a", "Google Chrome"])
             else:  # Linux
                 subprocess.Popen(["google-chrome"])
-            return True, "Opening Chrome for you"
+            return True, "Opening Chrome"
         except Exception as e:
             return True, f"Sorry, I couldn't open Chrome: {e}"
 
@@ -121,7 +107,6 @@ def handle_local_commands(text: str) -> tuple[bool, str]:
                 try:
                     subprocess.Popen(["code"])
                 except:
-                    # Try alternative path
                     subprocess.Popen(["C:\\Users\\archa\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"])
             else:
                 subprocess.Popen(["code"])
@@ -133,12 +118,17 @@ def handle_local_commands(text: str) -> tuple[bool, str]:
     if "open spotify" in text_lower:
         try:
             if platform.system() == "Windows":
-                subprocess.Popen(["spotify.exe"])
-            else:
+                try:
+                    subprocess.Popen(["spotify"])
+                except:
+                    subprocess.Popen(["C:\\Users\\archa\\AppData\\Roaming\\Spotify\\Spotify.exe"])
+            elif platform.system() == "Darwin":  # macOS
                 subprocess.Popen(["open", "-a", "Spotify"])
+            else:
+                subprocess.Popen(["spotify"])
             return True, "Opening Spotify"
-        except:
-            return True, "Sorry, I couldn't open Spotify"
+        except Exception as e:
+            return True, f"Sorry, I couldn't open Spotify: {e}"
 
     # Search Google
     if "search google for" in text_lower or "google search" in text_lower:
@@ -175,51 +165,107 @@ def handle_local_commands(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+# === USER MEMORY FUNCTIONS ===
+def load_user_data():
+    """Load user data from JSON file."""
+    try:
+        with open("user_data.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"name": None, "preferences": {}}
+
+
+def save_user_data(data):
+    """Save user data to JSON file."""
+    with open("user_data.json", "w") as f:
+        json.dump(data, f, indent=4)
+
+
+def check_for_name_in_input(text: str, user_data: dict) -> tuple[bool, str, dict]:
+    """Check if user is introducing themselves."""
+    text_lower = text.lower()
+
+    if any(phrase in text_lower for phrase in ["my name is", "i am", "i'm", "call me"]):
+        if "my name is" in text_lower:
+            name = text_lower.split("my name is")[-1].strip()
+        elif "i am" in text_lower:
+            name = text_lower.split("i am")[-1].strip()
+        elif "i'm" in text_lower:
+            name = text_lower.split("i'm")[-1].strip()
+        elif "call me" in text_lower:
+            name = text_lower.split("call me")[-1].strip()
+        else:
+            name = ""
+
+        name = name.split()[0].capitalize() if name else ""
+        if name:
+            user_data["name"] = name
+            save_user_data(user_data)
+            return True, f"Nice to meet you, {name}! I'll remember that. How can I help you today?", user_data
+
+    return False, "", user_data
+
+
+# === MAIN LOOP ===
 if __name__ == "__main__":
+    # Load user data at startup
+    user_data = load_user_data()
+
+    # Greet user by name if known
+    if user_data.get("name"):
+        print(f"\n👋 Welcome back, {user_data['name']}!\n")
+    else:
+        print("\n👋 Hello! I'm IRIS. What's your name?\n")
+
     while True:
-        # Record audio
         log("Listening...")
         speech_to_text()
         log("Done listening")
 
-        # Transcribe audio
+        # Transcribe
         current_time = time()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         words = loop.run_until_complete(transcribe(RECORDING_PATH))
         string_words = " ".join(word_dict.get("word") for word_dict in words if "word" in word_dict)
-
         with open("conv.txt", "a") as f:
             f.write(f"{string_words}\n")
 
         transcription_time = time() - current_time
         log(f"Finished transcribing in {transcription_time:.2f} seconds.")
 
-        # Check if it's a local command first
-        is_local_command, local_response = handle_local_commands(string_words)
+        # Check for name introduction
+        is_name_intro, name_response, user_data = check_for_name_in_input(string_words, user_data)
 
-        if is_local_command:
-            response = local_response
-            log("Handled as local command")
+        if is_name_intro:
+            response = name_response
+            log("Learned user's name")
         else:
-            # Get response from Groq
-            current_time = time()
-            context += f"\nUser: {string_words}\nIris: "
-            response = request_gpt(context)
-            context += response
-            gpt_time = time() - current_time
-            log(f"Finished generating response in {gpt_time:.2f} seconds.")
+            # Check local command
+            is_local_command, local_response = handle_local_commands(string_words)
+            if is_local_command:
+                response = local_response
+                log("Handled as local command")
+            else:
+                # Get AI response
+                current_time = time()
+                if user_data.get("name"):
+                    context_with_name = f"You are talking to {user_data['name']}. {context}"
+                else:
+                    context_with_name = context
+                context_with_name += f"\nUser: {string_words}\nIris: "
+                response = request_gpt(context_with_name)
+                gpt_time = time() - current_time
+                log(f"Finished generating response in {gpt_time:.2f} seconds.")
 
-        # Convert response to audio using ElevenLabs
+        # Convert response to audio
         current_time = time()
         try:
             audio_generator = elevenlabs_client.text_to_speech.convert(
                 text=response,
-                voice_id="pNInz6obpgDQGcFmaJgB",  # Adam voice
-                model_id="eleven_monolingual_v1"
+                voice_id="pNInz6obpgDQGcFmaJgB",
+                model_id="eleven_monolingual_v1",
             )
-
-            # Save audio to file
             with open("audio/response.wav", "wb") as f:
                 for chunk in audio_generator:
                     f.write(chunk)
@@ -230,14 +276,13 @@ if __name__ == "__main__":
             log(f"Error generating audio: {e}")
             continue
 
-        # Play response
+        # Play audio
         log("Speaking...")
         sound = mixer.Sound("audio/response.wav")
-
-        # Add response as a new line to conv.txt
         with open("conv.txt", "a") as f:
             f.write(f"{response}\n")
-
         sound.play()
         pygame.time.wait(int(sound.get_length() * 1000))
-        print(f"\n --- USER: {string_words}\n --- IRIS: {response}\n")
+
+        user_display = user_data.get("name", "USER")
+        print(f"\n --- {user_display}: {string_words}\n --- IRIS: {response}\n")

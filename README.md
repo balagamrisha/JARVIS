@@ -156,9 +156,9 @@ voice_id="pNInz6obpgDQGcFmaJgB"  # Change to different voice ID
 - Task automation (10+ commands)
 - Error handling and logging
 - Custom personality implementation
+- User memory system (remember preferences)
 
 ### 🔄 In Progress
-- User memory system (remember preferences)
 - Enhanced web dashboard
 
 ### 📋 Planned
